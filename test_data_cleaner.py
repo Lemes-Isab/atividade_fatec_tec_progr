@@ -1,7 +1,6 @@
 import pandas as pd
-import unittest
+from data_cleaner import remove_outliers_temperatura
 
-from data_cleaner import remove_outliers_temperatura(df)
 
 def test_remove_outliers_temperatura():
     df = pd.DataFrame({
@@ -10,4 +9,4 @@ def test_remove_outliers_temperatura():
 
     resultado = remove_outliers_temperatura(df)
 
-    self.assertEqual(len(resultado), 5)  # Assuming no outliers to remove
+    assert len(resultado) == 2
