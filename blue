@@ -1,0 +1,89 @@
+# Importando as bibliotecas necessárias e a classe Dados.
+from pathlib import Path
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+
+from dataframe import Dados
+
+# Caminho relativo: o CSV fica na mesma pasta deste arquivo.
+CAMINHO_CSV = Path(__file__).parent / "estufa_sensores_fake.csv"
+COLUNAS_NECESSARIAS = ["umidade_solo_pct", "temperatura_ar_c", "ph_solo", "estresse"]
+
+
+def _para_numero(serie):
+    return pd.to_numeric(serie.astype(str).str.replace(",", ".", regex=False), errors="coerce")
+
+
+def limpar_umidade(df):
+    df = df.copy()
+    u = _para_numero(df["umidade_solo_pct"])
+    df["umidade_solo_pct"] = u.where(u.between(0, 100))
+    return df
+
+
+def limpar_temperatura(df):
+    df = df.copy()
+    t = _para_numero(df["temperatura_ar_c"])
+    df["temperatura_ar_c"] = t.where(t.between(-10, 60))
+    return df
+
+
+def limpar_ph(df):
+    df = df.copy()
+    p = _para_numero(df["ph_solo"])
+    df["ph_solo"] = p.where(p.between(0, 14))
+    return df
+
+
+def padronizar_estresse(df):
+    df = df.copy()
+    e = df["estresse"].astype(str).str.strip().str.lower()
+    df["estresse"] = e.where(e.isin(["alto", "baixo"]))
+    return df
+
+
+def validar_modelo(df, caminho_saida="validacao_modelo.csv", seed=42):
+    """Orquestra: limpa -> treina -> valida -> salva CSV. Retorna a acurácia."""
+    df = df.drop_duplicates()
+    df = limpar_umidade(df)
+    df = limpar_temperatura(df)
+    df = limpar_ph(df)
+    df = padronizar_estresse(df)
+    df = df.dropna(subset=["umidade_solo_pct", "temperatura_ar_c", "ph_solo", "estresse"])
+
+    X = df[["umidade_solo_pct", "temperatura_ar_c", "ph_solo"]]
+    y = df["estresse"]
+
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
+    modelo = DecisionTreeClassifier(max_depth=4, random_state=seed).fit(X_tr, y_tr)
+
+    resultado = X_te.copy()
+    resultado["estresse_real"] = y_te
+    resultado["estresse_previsto"] = modelo.predict(X_te)
+    resultado["acertou"] = resultado["estresse_real"] == resultado["estresse_previsto"]
+    resultado.to_csv(caminho_saida, index=False)
+    return resultado["acertou"].mean()
+
+
+if __name__ == "__main__":
+    dataframe = pd.read_csv(CAMINHO_CSV)
+
+    # Verificando colunas
+    print(dataframe.columns)
+    faltando = [c for c in COLUNAS_NECESSARIAS if c not in dataframe.columns]
+    if faltando:
+        raise KeyError(f"Colunas ausentes no CSV: {faltando}")
+
+    # Usando a classe Dados com os valores já convertidos e limpos
+    limpo = limpar_temperatura(limpar_umidade(dataframe))
+    dados = Dados(limpo["temperatura_ar_c"], limpo["umidade_solo_pct"])
+    print("Média da temperatura do ar (°C):", round(dados.get_temperatura().mean(), 2))
+    print("Média da umidade do solo (%):", round(dados.get_umidade().mean(), 2))
+
+    # Fluxo completo do modelo
+    saida = Path(__file__).parent / "validacao_modelo.csv"
+    acuracia = validar_modelo(dataframe, caminho_saida=saida)
+    print(f"Acurácia final do modelo: {acuracia:.2%}")
+    print(f"Resultado salvo em: {saida}")
